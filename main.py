@@ -4,7 +4,6 @@ from pydantic import BaseModel
 import yt_dlp
 import os
 import uuid
-import subprocess
 
 app = FastAPI(title="DUBLY Backend")
 
@@ -19,13 +18,6 @@ app.add_middleware(
 
 class VideoRequest(BaseModel):
     url: str
-
-class VideoInfo(BaseModel):
-    title: str
-    duration: int
-    thumbnail: str
-    url: str
-    download_url: str
 
 @app.get("/")
 async def root():
@@ -64,7 +56,7 @@ async def download_video(request: VideoRequest):
         
         ydl_opts = {
             'outtmpl': f'{output_path}.%(ext)s',
-            'format': 'best[height<=720]',  # Limiter à 720p pour la rapidité
+            'format': 'worst[height<=360]',  # 👈 Qualité réduite pour test rapide
             'quiet': True,
             'no_warnings': True,
         }
