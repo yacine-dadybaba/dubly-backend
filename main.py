@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse  # 👈 DOIT ÊTRE ICI
 from pydantic import BaseModel
 import yt_dlp
 import os
@@ -70,9 +71,19 @@ async def download_video(request: VideoRequest):
                 "filename": filename,
                 "title": info.get('title', 'Vidéo sans titre'),
                 "duration": info.get('duration', 0),
+                "download_url": f"https://dubly-backend.onrender.com/video/file/{os.path.basename(filename)}"
             }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erreur de téléchargement: {str(e)}")
+
+@app.get("/video/file/{filename}")
+async def get_video_file(filename: str):
+    """Télécharge le fichier vidéo"""
+    file_path = f"downloads/{filename}"
+    if os.path.exists(file_path):
+        return FileResponse(file_path, media_type="video/mp4", filename=filename)
+    else:
+        raise HTTPException(status_code=404, detail="Fichier non trouvé")
 
 @app.get("/health")
 async def health_check():
