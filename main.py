@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+import json
 import yt_dlp
 import os
 import uuid
@@ -28,46 +29,66 @@ def extract_price_from_url(url):
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0',
             'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Referer': 'https://www.google.fr/',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         }
         
-        # Forcer l'EUR dans l'URL
-        if 'temu.com' in url or 'aliexpress.com' in url:
-            if '?' in url:
-                forced_url = url + '&currency=EUR'
-            else:
-                forced_url = url + '?currency=EUR'
-        else:
-            forced_url = url
-            
-        print(f"🔍 Tentative d'extraction du prix depuis: {forced_url}")
-        response = requests.get(forced_url, headers=headers, timeout=15)
+        # 👇 IGNORER LES LIENS DE CHECKOUT
+        if 'order_checkout' in url or 'bgad_order' in url:
+            print("⚠️ Lien de checkout détecté, extraction impossible")
+            return None
+        
+        response = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Pour Temu
-        if 'temu.com' in url:
-            # Chercher le symbole €
-            price_element = soup.find(string=re.compile(r'€\s*[\d,\.]+|[\d,\.]+\s*€'))
-            if price_element:
-                price_text = re.search(r'[\d,\.]+', price_element)
-                if price_text:
-                    return float(price_text.group().replace(',', '.'))
-            
-            # Chercher dans les meta
-            price_meta = soup.find('meta', {'property': 'product:price:amount'})
-            if price_meta:
-                return float(price_meta['content'])
+        # Méthode 1 : Chercher dans les scripts JSON-LD
+        scripts = soup.find_all('script', type='application/ld+json')
+        for script in scripts:
+            try:
+                if script.string:
+                    data = json.loads(script.string)
+                    if isinstance(data, dict) and 'offers' in data:
+                        price = data['offers'].get('price')
+                        if price:
+                            print(f"✅ Prix trouvé via JSON-LD: {price}")
+                            return float(price)
+            except:
+                pass
         
-        # Pour AliExpress
-        elif 'aliexpress.com' in url:
-            price_span = soup.find('span', class_='product-price-value')
-            if not price_span:
-                price_span = soup.find('span', {'itemprop': 'price'})
-            if price_span:
-                price_text = re.search(r'[\d,\.]+', price_span.text)
-                if price_text:
-                    return float(price_text.group().replace(',', '.'))
+        # Méthode 2 : Chercher dans les meta tags
+        price_selectors = [
+            {'property': 'product:price:amount'},
+            {'property': 'og:price:amount'},
+            {'name': 'twitter:data1'},
+            {'itemprop': 'price'},
+        ]
+        
+        for selector in price_selectors:
+            meta = soup.find('meta', selector)
+            if meta and meta.get('content'):
+                try:
+                    price = float(meta['content'])
+                    print(f"✅ Prix trouvé via meta: {price}")
+                    return price
+                except:
+                    pass
+        
+        # Méthode 3 : Chercher le symbole € dans le texte
+        price_patterns = [
+            r'€\s*([\d\s,\.]+)',
+            r'([\d\s,\.]+)\s*€',
+            r'EUR\s*([\d\s,\.]+)',
+        ]
+        
+        for pattern in price_patterns:
+            match = re.search(pattern, response.text)
+            if match:
+                price_text = match.group(1).replace(' ', '').replace(',', '.')
+                try:
+                    price = float(price_text)
+                    print(f"✅ Prix trouvé via regex: {price}")
+                    return price
+                except:
+                    pass
         
         print("❌ Prix non trouvé")
         return None
