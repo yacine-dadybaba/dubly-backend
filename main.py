@@ -27,17 +27,23 @@ def extract_price_from_url(url):
     """Extrait le prix en EURO depuis une page Temu/AliExpress"""
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0',
-            'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 13; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+            'Accept-Language': 'fr-FR,fr;q=0.9',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         }
         
-        # 👇 IGNORER LES LIENS DE CHECKOUT
+        print(f"🔍 Tentative d'extraction du prix depuis: {url}")
+        
         if 'order_checkout' in url or 'bgad_order' in url:
             print("⚠️ Lien de checkout détecté, extraction impossible")
             return None
         
-        response = requests.get(url, headers=headers, timeout=15)
+        session = requests.Session()
+        response = session.get(url, headers=headers, timeout=15, allow_redirects=True)
+        
+        print(f"📄 URL finale: {response.url}")
+        print(f"📄 Statut HTTP: {response.status_code}")
+        
         soup = BeautifulSoup(response.text, 'html.parser')
         
         # Méthode 1 : Chercher dans les scripts JSON-LD
@@ -72,25 +78,26 @@ def extract_price_from_url(url):
                 except:
                     pass
         
-        # Méthode 3 : Chercher le symbole € dans le texte
-        price_patterns = [
-            r'€\s*([\d\s,\.]+)',
-            r'([\d\s,\.]+)\s*€',
-            r'EUR\s*([\d\s,\.]+)',
-        ]
-        
-        for pattern in price_patterns:
-            match = re.search(pattern, response.text)
-            if match:
-                price_text = match.group(1).replace(' ', '').replace(',', '.')
+        # Méthode 3 : Chercher avec regex
+        prices = re.findall(r'€\s*(\d+[.,]?\d*)', response.text)
+        if prices:
+            print(f"💰 Prix trouvés dans le HTML: {prices[:5]}")
+            for p in prices[:5]:
                 try:
-                    price = float(price_text)
-                    print(f"✅ Prix trouvé via regex: {price}")
-                    return price
+                    return float(p.replace(',', '.'))
                 except:
                     pass
         
-        print("❌ Prix non trouvé")
+        prices2 = re.findall(r'(\d+[.,]?\d*)\s*€', response.text)
+        if prices2:
+            print(f"💰 Prix trouvés (motif 2): {prices2[:5]}")
+            for p in prices2[:5]:
+                try:
+                    return float(p.replace(',', '.'))
+                except:
+                    pass
+        
+        print("❌ Aucun prix trouvé")
         return None
     except Exception as e:
         print(f"❌ Erreur extraction prix: {e}")
