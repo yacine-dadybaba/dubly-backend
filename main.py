@@ -9,6 +9,7 @@ import uuid
 import requests
 import re
 from bs4 import BeautifulSoup
+from datetime import datetime
 
 app = FastAPI(title="DUBLY Backend")
 
@@ -22,6 +23,8 @@ app.add_middleware(
 
 class VideoRequest(BaseModel):
     url: str
+
+# ======================== PARTIE DUBLY (DOUBLAGE VIDÉO) ========================
 
 def extract_price_from_url(url):
     """Extrait le prix en EURO depuis une page Temu/AliExpress"""
@@ -181,6 +184,40 @@ async def health_check():
     return {"status": "healthy", "service": "DUBLY Backend"}
 
 os.makedirs("downloads", exist_ok=True)
+
+# ======================== PARTIE DADYBABA (BOÎTE AUX LETTRES) ========================
+
+pending_dadybaba_orders = []
+
+class DadybabaOrder(BaseModel):
+    client_name: str
+    client_phone: str
+    client_address: str
+    articles: list
+    total_euro: float = 0.0
+    total_dzd: float = 0.0
+
+@app.post("/dadybaba/order")
+async def receive_dadybaba_order(order: DadybabaOrder):
+    """Reçoit une commande depuis l'application Flutter"""
+    try:
+        order_data = order.dict()
+        order_data["received_at"] = datetime.now().isoformat()
+        pending_dadybaba_orders.append(order_data)
+        print(f"✅ Nouvelle commande Dadybaba reçue de {order.client_name}")
+        return {"success": True, "message": "Commande en attente de récupération"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Erreur: {str(e)}")
+
+@app.get("/dadybaba/pending")
+async def get_pending_orders():
+    """Renvoie toutes les commandes en attente et les efface"""
+    global pending_dadybaba_orders
+    orders_to_return = pending_dadybaba_orders.copy()
+    pending_dadybaba_orders = []
+    return {"orders": orders_to_return}
+
+# =============================================================================
 
 if __name__ == "__main__":
     import uvicorn
